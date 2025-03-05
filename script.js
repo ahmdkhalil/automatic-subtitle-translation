@@ -1,179 +1,227 @@
-// Main component architecture for the translation subtitle system
+// Enhanced Subtitle Translation Script with PDF and Word Document Support
 
-// 1. Speech Recognition Module
-class SpeechTracker {
-  constructor(originalText, translatedText) {
-    this.originalText = originalText;
-    this.translatedText = translatedText;
-    this.recognition = new webkitSpeechRecognition() || new SpeechRecognition();
-    this.currentPosition = 0;
-    this.alignmentMap = this.createAlignmentMap();
-    this.isListening = false;
-  }
-
-  // Create mapping between original text segments and translated segments
-  createAlignmentMap() {
-    // Split texts into sentences or paragraphs
-    const originalSegments = this.splitIntoSegments(this.originalText);
-    const translatedSegments = this.splitIntoSegments(this.translatedText);
+class DocumentProcessor {
+  static async processPDF(file) {
+    // Dynamically import PDF.js 
+    const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.mjs');
     
-    // Create alignment based on position (assumes 1:1 mapping)
-    // In a production system, this would use more sophisticated alignment algorithms
-    const alignmentMap = [];
-    const minLength = Math.min(originalSegments.length, translatedSegments.length);
+    // Load PDF document
+    const loadingTask = pdfjsLib.getDocument(URL.createObjectURL(file));
+    const pdf = await loadingTask.promise;
     
-    for (let i = 0; i < minLength; i++) {
-      alignmentMap.push({
-        original: originalSegments[i],
-        translated: translatedSegments[i],
-        startTime: null,
-        endTime: null
-      });
+    // Extract text from all pages
+    let fullText = '';
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + '\n';
     }
     
-    return alignmentMap;
+    return fullText.trim();
   }
   
-  // Split text into segments (sentences or paragraphs)
-  splitIntoSegments(text) {
-    // Simple sentence splitting - would be more sophisticated in production
-    return text.split(/[.!?]+/).filter(segment => segment.trim().length > 0);
-  }
-  
-  // Start listening to speech
-  startListening() {
-    if (this.isListening) return;
-    
-    this.recognition.continuous = true;
-    this.recognition.interimResults = true;
-    this.recognition.lang = 'en-US'; // Set to the language of original text
-    
-    this.recognition.onresult = (event) => this.handleSpeechResult(event);
-    this.recognition.onstart = () => {
-      console.log("Speech recognition started");
-      this.isListening = true;
-    };
-    this.recognition.onerror = (event) => console.error("Speech recognition error", event);
-    this.recognition.onend = () => {
-      console.log("Speech recognition ended");
-      this.isListening = false;
-    };
-    
-    this.recognition.start();
-  }
-  
-  // Stop listening
-  stopListening() {
-    if (!this.isListening) return;
-    this.recognition.stop();
-    this.isListening = false;
-  }
-  
-  // Handle speech recognition results
-  handleSpeechResult(event) {
-    const transcript = Array.from(event.results)
-      .map(result => result[0].transcript)
-      .join('');
-    
-    // Find matching segment in original text
-    const matchedSegmentIndex = this.findMatchingSegment(transcript);
-    
-    if (matchedSegmentIndex !== -1 && matchedSegmentIndex !== this.currentPosition) {
-      this.currentPosition = matchedSegmentIndex;
-      
-      // Emit event with corresponding translated text
-      const translatedSegment = this.alignmentMap[matchedSegmentIndex].translated;
-      document.dispatchEvent(new CustomEvent('subtitleUpdate', { 
-        detail: { 
-          subtitle: translatedSegment,
-          index: matchedSegmentIndex
+  static async processWordDocument(file) {
+    // Use mammoth to convert .docx to text
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const arrayBuffer = event.target.result;
+          const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+          resolve(result.value);
+        } catch (error) {
+          reject(error);
         }
-      }));
-    }
-  }
-  
-  // Find which segment of the original text matches the current speech
-  findMatchingSegment(transcript) {
-    // In a real system, this would use fuzzy matching and more sophisticated alignment
-    for (let i = 0; i < this.alignmentMap.length; i++) {
-      const segment = this.alignmentMap[i].original;
-      if (transcript.toLowerCase().includes(segment.toLowerCase())) {
-        return i;
-      }
-    }
-    return -1;
-  }
-}
-
-// 2. Subtitle Display Component
-class SubtitleDisplay {
-  constructor(containerId) {
-    this.container = document.getElementById(containerId);
-    this.currentSubtitle = '';
-    
-    // Listen for subtitle updates
-    document.addEventListener('subtitleUpdate', (event) => {
-      this.updateSubtitle(event.detail.subtitle);
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
     });
   }
   
-  // Update the displayed subtitle
-  updateSubtitle(text) {
-    this.currentSubtitle = text;
-    this.container.textContent = text;
+  static async processTextFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => resolve(event.target.result);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  }
+  
+  static async processFile(file) {
+    const extension = file.name.split('.').pop().toLowerCase();
     
-    // Add animation for subtitle transition
-    this.container.classList.remove('fade-in');
-    void this.container.offsetWidth; // Trigger reflow
-    this.container.classList.add('fade-in');
-  }
-}
-
-// 3. Main Application Controller
-class TranslationSubtitleApp {
-  constructor(originalText, translatedText, subtitleContainerId) {
-    this.speechTracker = new SpeechTracker(originalText, translatedText);
-    this.subtitleDisplay = new SubtitleDisplay(subtitleContainerId);
-  }
-  
-  start() {
-    this.speechTracker.startListening();
-  }
-  
-  stop() {
-    this.speechTracker.stopListening();
-  }
-  
-  // Load texts from files
-  static async loadFromFiles(originalTextFile, translatedTextFile, subtitleContainerId) {
-    try {
-      const originalText = await fetch(originalTextFile).then(r => r.text());
-      const translatedText = await fetch(translatedTextFile).then(r => r.text());
-      
-      return new TranslationSubtitleApp(originalText, translatedText, subtitleContainerId);
-    } catch (error) {
-      console.error("Error loading text files:", error);
-      throw error;
+    switch (extension) {
+      case 'pdf':
+        return await this.processPDF(file);
+      case 'docx':
+      case 'doc':
+        return await this.processWordDocument(file);
+      case 'txt':
+        return await this.processTextFile(file);
+      default:
+        throw new Error(`Unsupported file type: .${extension}`);
     }
   }
 }
 
-// Usage Example
-document.addEventListener('DOMContentLoaded', async () => {
-  const startButton = document.getElementById('startButton');
-  const stopButton = document.getElementById('stopButton');
+class TranslationSubtitleApp {
+  constructor() {
+    this.originalText = '';
+    this.translatedText = '';
+    
+    // DOM Elements
+    this.originalFileInput = document.getElementById('originalTextFile');
+    this.translatedFileInput = document.getElementById('translatedTextFile');
+    this.originalTextDisplay = document.getElementById('originalTextDisplay');
+    this.translatedTextDisplay = document.getElementById('translatedTextDisplay');
+    this.startButton = document.getElementById('startButton');
+    this.stopButton = document.getElementById('stopButton');
+    this.subtitleContainer = document.getElementById('subtitleContainer');
+    this.statusDisplay = document.getElementById('status');
+    
+    this.setupEventListeners();
+  }
   
-  // Initialize app with example texts
-  const originalText = `Hello. How are you today? I hope you're doing well. 
-  Let me tell you about this interesting project I'm working on.
-  It involves automatic translation of subtitles based on speech recognition.`;
+  setupEventListeners() {
+    // Original text file upload
+    this.originalFileInput.addEventListener('change', async (event) => {
+      try {
+        const file = event.target.files[0];
+        if (file) {
+          this.originalText = await DocumentProcessor.processFile(file);
+          this.originalTextDisplay.textContent = this.originalText;
+          this.updateStatus(`Original text loaded: ${file.name}`);
+        }
+      } catch (error) {
+        this.updateStatus(`Error loading original text: ${error.message}`, 'error');
+      }
+    });
+    
+    // Translated text file upload
+    this.translatedFileInput.addEventListener('change', async (event) => {
+      try {
+        const file = event.target.files[0];
+        if (file) {
+          this.translatedText = await DocumentProcessor.processFile(file);
+          this.translatedTextDisplay.textContent = this.translatedText;
+          this.updateStatus(`Translated text loaded: ${file.name}`);
+        }
+      } catch (error) {
+        this.updateStatus(`Error loading translated text: ${error.message}`, 'error');
+      }
+    });
+    
+    // Start and stop buttons
+    this.startButton.addEventListener('click', () => this.startListening());
+    this.stopButton.addEventListener('click', () => this.stopListening());
+  }
   
-  const translatedText = `Bonjour. Comment allez-vous aujourd'hui? J'espère que vous allez bien.
-  Laissez-moi vous parler de ce projet intéressant sur lequel je travaille.
-  Il s'agit de la traduction automatique de sous-titres basée sur la reconnaissance vocale.`;
+  updateStatus(message, type = 'info') {
+    this.statusDisplay.textContent = message;
+    this.statusDisplay.className = `status ${type}`;
+  }
   
-  const app = new TranslationSubtitleApp(originalText, translatedText, 'subtitleContainer');
+  startListening() {
+    if (!this.originalText || !this.translatedText) {
+      this.updateStatus('Please upload both original and translated texts first.', 'error');
+      return;
+    }
+    
+    // Speech recognition setup (similar to previous implementation)
+    try {
+      this.recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      this.recognition.continuous = true;
+      this.recognition.interimResults = true;
+      
+      this.recognition.onstart = () => {
+        this.updateStatus('Listening...');
+      };
+      
+      this.recognition.onend = () => {
+        this.updateStatus('Stopped listening');
+      };
+      
+      this.recognition.onerror = (event) => {
+        this.updateStatus(`Speech recognition error: ${event.error}`, 'error');
+      };
+      
+      this.recognition.onresult = (event) => {
+        this.handleSpeechResult(event);
+      };
+      
+      this.recognition.start();
+    } catch (error) {
+      this.updateStatus(`Error starting speech recognition: ${error.message}`, 'error');
+    }
+  }
   
-  startButton.addEventListener('click', () => app.start());
-  stopButton.addEventListener('click', () => app.stop());
+  stopListening() {
+    if (this.recognition) {
+      this.recognition.stop();
+    }
+  }
+  
+  handleSpeechResult(event) {
+    // Similar to previous implementation, but with more robust matching
+    const transcript = Array.from(event.results)
+      .map(result => result[0].transcript)
+      .join(' ')
+      .toLowerCase();
+    
+    // Find the closest matching segment
+    const matchedSegment = this.findBestMatchingSegment(transcript);
+    
+    if (matchedSegment) {
+      this.updateSubtitle(matchedSegment.translatedText);
+    }
+  }
+  
+  findBestMatchingSegment(transcript) {
+    // Split original and translated texts into segments
+    const originalSegments = this.splitIntoSegments(this.originalText);
+    const translatedSegments = this.splitIntoSegments(this.translatedText);
+    
+    // Find best matching segment
+    for (let i = 0; i < originalSegments.length; i++) {
+      const originalSeg = originalSegments[i].toLowerCase();
+      if (transcript.includes(originalSeg)) {
+        return {
+          originalText: originalSegments[i],
+          translatedText: translatedSegments[i] || ''
+        };
+      }
+    }
+    
+    return null;
+  }
+  
+  splitIntoSegments(text) {
+    // Split into sentences, handling various punctuation
+    return text.split(/[.!?]+/).filter(seg => seg.trim().length > 5);
+  }
+  
+  updateSubtitle(text) {
+    // Update subtitle with animation
+    this.subtitleContainer.textContent = text;
+    this.subtitleContainer.classList.remove('fade-in');
+    void this.subtitleContainer.offsetWidth; // Trigger reflow
+    this.subtitleContainer.classList.add('fade-in');
+  }
+}
+
+// Initialize the app when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+  // Dynamically load external libraries
+  Promise.all([
+    import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.mjs'),
+    import('https://unpkg.com/mammoth@0.5.1/mammoth.browser.min.js')
+  ]).then(() => {
+    // Initialize the translation subtitle app
+    window.translationApp = new TranslationSubtitleApp();
+  }).catch(error => {
+    console.error('Error loading libraries:', error);
+  });
 });
+</parameter>
+</invoke>
