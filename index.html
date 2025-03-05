@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automatic Translation Subtitle System</title>
+  <link rel="stylesheet" href="styles.css"> <!-- Optional: separate CSS file -->
+</head>
+<body>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Automatic Translation Subtitle System</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+    
+    .text-container {
+      margin: 20px 0;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: #f9f9f9;
+    }
+    
+    .subtitle-area {
+      margin: 30px 0;
+      padding: 20px;
+      background: #000;
+      color: #fff;
+      font-size: 24px;
+      text-align: center;
+      min-height: 60px;
+      border-radius: 4px;
+      position: relative;
+    }
+    
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin: 20px 0;
+    }
+    
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    
+    #startButton {
+      background-color: #4CAF50;
+      color: white;
+    }
+    
+    #stopButton {
+      background-color: #f44336;
+      color: white;
+    }
+    
+    button:hover {
+      opacity: 0.9;
+    }
+    
+    .fade-in {
+      animation: fadeIn 0.5s;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    .language-label {
+      font-weight: bold;
+      margin-bottom: 5px;
+      color: #555;
+    }
+    
+    .status {
+      text-align: center;
+      margin: 10px 0;
+      font-style: italic;
+      color: #666;
+    }
+    
+    .file-inputs {
+      margin: 20px 0;
+    }
+    
+    .file-input {
+      margin: 10px 0;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Automatic Translation Subtitle System</h1>
+    
+    <div class="file-inputs">
+      <div class="file-input">
+        <label for="originalTextFile">Original Text File:</label>
+        <input type="file" id="originalTextFile" accept=".txt">
+      </div>
+      
+      <div class="file-input">
+        <label for="translatedTextFile">Translated Text File:</label>
+        <input type="file" id="translatedTextFile" accept=".txt">
+      </div>
+    </div>
+    
+    <div class="text-container">
+      <div class="language-label">Original Text:</div>
+      <div id="originalTextDisplay">
+        Hello. How are you today? I hope you're doing well. 
+        Let me tell you about this interesting project I'm working on.
+        It involves automatic translation of subtitles based on speech recognition.
+      </div>
+    </div>
+    
+    <div class="text-container">
+      <div class="language-label">Translated Text:</div>
+      <div id="translatedTextDisplay">
+        Bonjour. Comment allez-vous aujourd'hui? J'espère que vous allez bien.
+        Laissez-moi vous parler de ce projet intéressant sur lequel je travaille.
+        Il s'agit de la traduction automatique de sous-titres basée sur la reconnaissance vocale.
+      </div>
+    </div>
+    
+    <div class="subtitle-area fade-in" id="subtitleContainer">
+      Translated subtitles will appear here
+    </div>
+    
+    <div class="status" id="status">Ready to start</div>
+    
+    <div class="controls">
+      <button id="startButton">Start Listening</button>
+      <button id="stopButton">Stop Listening</button>
+    </div>
+  </div>
+
+  <script>
+    // Speech Recognition may not work in this environment, 
+    // but the code structure demonstrates the approach
+    document.addEventListener('DOMContentLoaded', () => {
+      const startButton = document.getElementById('startButton');
+      const stopButton = document.getElementById('stopButton');
+      const status = document.getElementById('status');
+      const subtitleContainer = document.getElementById('subtitleContainer');
+      const originalTextDisplay = document.getElementById('originalTextDisplay');
+      const translatedTextDisplay = document.getElementById('translatedTextDisplay');
+      
+      // Handle file inputs
+      document.getElementById('originalTextFile').addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          const text = await file.text();
+          originalTextDisplay.textContent = text;
+        }
+      });
+      
+      document.getElementById('translatedTextFile').addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          const text = await file.text();
+          translatedTextDisplay.textContent = text;
+        }
+      });
+      
+      // Set up speech recognition if available
+      let recognition;
+      try {
+        recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        
+        recognition.onstart = () => {
+          status.textContent = "Listening...";
+        };
+        
+        recognition.onend = () => {
+          status.textContent = "Stopped listening";
+        };
+        
+        recognition.onerror = (event) => {
+          status.textContent = `Error: ${event.error}`;
+        };
+        
+        recognition.onresult = (event) => {
+          const transcript = Array.from(event.results)
+            .map(result => result[0].transcript)
+            .join('');
+          
+          // In a real implementation, this would match with segments
+          // and display the appropriate translation
+          subtitleContainer.textContent = "Subtitle based on: " + transcript.slice(-50);
+          
+          // Add animation
+          subtitleContainer.classList.remove('fade-in');
+          void subtitleContainer.offsetWidth; // Trigger reflow
+          subtitleContainer.classList.add('fade-in');
+        };
+      } catch (e) {
+        status.textContent = "Speech recognition not supported in this browser";
+      }
+      
+      // Button handlers
+      startButton.addEventListener('click', () => {
+        if (recognition) {
+          try {
+            recognition.start();
+          } catch (e) {
+            status.textContent = "Error starting recognition: " + e.message;
+          }
+        } else {
+          // Fallback for demonstration
+          status.textContent = "Demo mode (no speech recognition)";
+          
+          // Simulate subtitle changes
+          let demoIndex = 0;
+          const demoSubtitles = [
+            "Bonjour.",
+            "Comment allez-vous aujourd'hui?",
+            "J'espère que vous allez bien.",
+            "Laissez-moi vous parler de ce projet intéressant sur lequel je travaille.",
+            "Il s'agit de la traduction automatique de sous-titres basée sur la reconnaissance vocale."
+          ];
+          
+          subtitleContainer.textContent = "Demo starting...";
+          
+          const demoInterval = setInterval(() => {
+            if (demoIndex < demoSubtitles.length) {
+              subtitleContainer.textContent = demoSubtitles[demoIndex];
+              
+              // Add animation
+              subtitleContainer.classList.remove('fade-in');
+              void subtitleContainer.offsetWidth; // Trigger reflow
+              subtitleContainer.classList.add('fade-in');
+              
+              demoIndex++;
+            } else {
+              clearInterval(demoInterval);
+              status.textContent = "Demo completed";
+            }
+          }, 3000);
+        }
+      });
+      
+      stopButton.addEventListener('click', () => {
+        if (recognition) {
+          recognition.stop();
+        }
+        status.textContent = "Stopped";
+      });
+    });
+  </script>
+  <script src="script.js"></script>
+</body>
+</html>
